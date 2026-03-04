@@ -51,8 +51,9 @@ const (
 	// defaultServerCert - Default certificate name if bind is "" (all interfaces)
 	defaultServerCert = ""
 
-	// ServerMaxMessageSize - Server-side max GRPC message size
-	ServerMaxMessageSize = (2 * 1024 * 1024 * 1024) - 1
+	// ServerMaxMessageSize - Maximum size of a single C2 envelope from an implant.
+	// Capped at 256 MiB to prevent OOM from a malicious length prefix.
+	ServerMaxMessageSize = 256 * 1024 * 1024
 
 	mtlsYamuxPreface = "MUX/1"
 
@@ -360,7 +361,9 @@ func socketReadEnvelope(connection net.Conn) (*sliverpb.Envelope, error) {
 
 	dataBuf := make([]byte, dataLength)
 
-	n, err = io.ReadFull(connection, dataBuf)
+	// Use LimitedReader as a safety net to never read more than dataLength bytes.
+	lr := &io.LimitedReader{R: connection, N: int64(dataLength)}
+	n, err = io.ReadFull(lr, dataBuf)
 	if err != nil || n != dataLength {
 		mtlsLog.Errorf("Socket error (read data): %v", err)
 		return nil, err

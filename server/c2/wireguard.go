@@ -454,8 +454,9 @@ func socketWGReadEnvelope(connection net.Conn) (*sliverpb.Envelope, error) {
 
 	dataBuf := make([]byte, dataLength)
 
-	n, err = io.ReadFull(connection, dataBuf)
-
+	// Use LimitedReader as a safety net to never read more than dataLength bytes.
+	lr := &io.LimitedReader{R: connection, N: int64(dataLength)}
+	n, err = io.ReadFull(lr, dataBuf)
 	if err != nil || n != dataLength {
 		wgLog.Errorf("Socket error (read data): %v", err)
 		return nil, err
