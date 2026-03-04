@@ -364,3 +364,39 @@ func TestMTLSImplantReadEnvelopeRejectsTruncatedServerSignature(t *testing.T) {
 		t.Fatalf("expected EOF for truncated signature, got=%v", err)
 	}
 }
+
+func TestMTLSSocketReadEnvelopeRejectsOversizedLength(t *testing.T) {
+	clearMTLSImplantSigKeyCache(t)
+
+	// Build a frame header with a valid signature structure but an
+	// oversized length prefix (512 MiB, well above the 256 MiB cap).
+	rawSigBuf := make([]byte, minisign.RawSigSize)
+	binary.LittleEndian.PutUint16(rawSigBuf[:2], minisign.EdDSA)
+
+	dataLengthBuf := make([]byte, 4)
+	const oversized = 512 * 1024 * 1024 // 512 MiB
+	binary.LittleEndian.PutUint32(dataLengthBuf, oversized)
+
+	frame := make([]byte, 0, minisign.RawSigSize+4)
+	frame = append(frame, rawSigBuf...)
+	frame = append(frame, dataLengthBuf...)
+
+	srv, cli := net.Pipe()
+	defer srv.Close()
+	defer cli.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := socketReadEnvelope(srv)
+		errCh <- err
+	}()
+	go func() {
+		_, _ = cli.Write(frame)
+		_ = cli.Close()
+	}()
+
+	err := <-errCh
+	if err == nil || !strings.Contains(err.Error(), "invalid data length") {
+		t.Fatalf("expected 'invalid data length' error for oversized length prefix, got=%v", err)
+	}
+}
