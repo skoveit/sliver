@@ -490,11 +490,16 @@ func (p *NetConnPivot) read() ([]byte, error) {
 	}
 
 	dataLength := int(binary.LittleEndian.Uint32(dataLengthBuf))
-	if dataLength <= 0 {
+
+	// maxPivotMessageSize caps the buffer allocation to prevent OOM from a
+	// malicious or corrupted length prefix (256 MiB).
+	const maxPivotMessageSize = 256 * 1024 * 1024
+
+	if dataLength <= 0 || dataLength > maxPivotMessageSize {
 		// {{if .Config.Debug}}
-		log.Printf("[pivot] read error: %s\n", err)
+		log.Printf("[pivot] invalid data length: %d\n", dataLength)
 		// {{end}}
-		return nil, errors.New("[pivot] zero data length")
+		return nil, errors.New("[pivot] invalid data length")
 	}
 	dataBuf := make([]byte, dataLength)
 

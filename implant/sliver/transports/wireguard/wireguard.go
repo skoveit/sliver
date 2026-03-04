@@ -198,11 +198,15 @@ func ReadEnvelope(connection net.Conn) (*pb.Envelope, error) {
 	}
 	dataLength := int(binary.LittleEndian.Uint32(dataLengthBuf))
 
-	if dataLength <= 0 {
+	// maxEnvelopeSize caps the buffer allocation to prevent OOM from a
+	// malicious or corrupted length prefix (256 MiB).
+	const maxEnvelopeSize = 256 * 1024 * 1024
+
+	if dataLength <= 0 || dataLength > maxEnvelopeSize {
 		// {{if .Config.Debug}}
-		log.Printf("[pivot] read error: %s\n", err)
+		log.Printf("[wireguard] invalid data length: %d\n", dataLength)
 		// {{end}}
-		return nil, errors.New("[wireguard] zero data length")
+		return nil, errors.New("[wireguard] invalid data length")
 	}
 
 	dataBuf := make([]byte, dataLength)
